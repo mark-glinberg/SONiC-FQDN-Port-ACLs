@@ -1,0 +1,141 @@
+/*Iterates through each template, conducts an nslookup, and compares against existing rules.
+This method creates an add patch for any rule that needs to be added or modified, and a remove patch for any extra rule.
+Both rules with old ips as well as old rules without existing templates will be marked for removal.
+Rules that don't start with the prefix will not be touched.
+
+Returns:
+    list: dictionaries for each patch
+*/
+function updateRules() do
+    set FQDN_RULE_PREFIX = "FQDN_RULE_" // constant prefix for all automatically generated rules
+    set patch_list = [] // output list of rules to add/update/remove
+
+    set seen_templates = set() // set of all templates that we've seen
+    set fqdn_rules = getFQDNRules() // nested map of all fqdn rules for faster lookup
+    set fqdn_rule_templates = configDB.FQDN_TEMPLATES // query configDB for all templates
+
+    foreach (rule_template in fqdn_rule_templates) do
+        set domain = rule_template.fqdn[:7] // first 7 chars of the fqdn (could be changed)
+        set hash = hash(rule_template) // 5 char hash of the actual rule template string (excluding domain name)
+        set rule_name = FQDN_RULE_PREFIX + domain + "_" + hash + "_"
+        set table = rule_template.table_name // get the name of the table the rule should be in
+
+        set existing_rules = map() // map, key = ips, value = rule template
+        set nums_used = set() // set of rule numbers used for this rule template
+        
+        if table in fqdn_rules and domain in fqdn_rules[table] and hash in fqdn_rules[table][domain] do 
+            foreach (rule in fqdn_rules[table][domain][hash]) do // iterate through every rule with a matching domain and hash
+                existing_rules[rule.ip] = rule // add key=ip, value=rule
+                nums_used.add(int(rule.number)) // add rule number to set of used numbers
+            end
+        end
+
+        set new_ips = nslookup(rule_template.fqdn) // set of latest ips from DNS server associated with fqdn
+        set extra_old_ips = existing_rules.keys().difference(new_ips) // set difference: old - new
+        set extra_new_ips = new_ips.difference(existing_rules.keys()) // set difference: new - old
+
+        last_checked_num = 1 // where to start iterating to check for available rule numbers
+        while (extra_new_ips.size() > 0) do // iterate through all new ips
+            new_ip = extra_new_ips.pop()
+            if (extra_old_ips.size() > 0) do // replace an old ip with a new ip in an existing rule
+                old_ip = extra_old_ips.pop()
+                number = existing_rules[old_ip].number
+            end else do // if no old rules are available for replacement, find an unused rule number
+                while(True) do
+                    if last_checked_num not in nums_used do 
+                        number = last_checked_num
+                        nums_used.add(last_checked_num)
+                        last_checked_num += 1
+                        break
+                    end
+                    last_checked_num += 1
+                end
+            end
+            path = table + "|" + rule_name + "_" + number // create the new rule path using the number found
+            new_patch = createPatch(path, "add", rule_template.template, new_ip) // create the new rule patch
+            patch_list.append(new_patch) // add the new patch to the patch list
+        end
+
+        while (extra_old_ips.size() > 0) do // if any old ips are still left after all new ips have been added
+            old_ip = extra_old_ips.pop()
+            number = existing_rules[old_ip].number
+            path = table + "|" + rule_name + "_" + number // create the old rule path
+            new_patch = createPatch(path, "remove") // create a remove patch for the old rule
+            patch_list.append(new_patch) // add the new patch to the patch list
+        end
+
+        seen_templates.add((table, domain, hash))
+    end
+
+    foreach table, domain, hash in fqdn_rules do // iterate through each existing list of fqdn rule(s) that share the same template
+        if (table, domain, hash) not in seen_templates do // if a template hasn't been seen for that fqdn rule
+            foreach rule in fqdn_rules[table][domain][hash] do // iterate through each rule in the list
+                path = table + "|" + FQDN_RULE_PREFIX + domain + "_" + hash + "_" + rule.number // get the path of that rule
+                patch_list.append(createPatch(path, "remove")) // add a remove patch for that rule
+            end
+        end
+    end
+
+    return patch_list    
+end
+
+/*Creates a patch entry for the Generic Config Updater (GCU)
+
+Args:
+    path ("String"): path of the rule to patch (<TABLE_NAME>|<RULE_NAME>)
+    op ("String"): "add" or "remove"
+    template ("String", optional): template of the rule if op="add". Defaults to None
+    ip ("String", optional): ip of the rule if op="add". Defaults to None.
+
+Returns:
+    dict: the patch for that rule to be read by the GCU
+*/
+function createPatch(path, operation, template, ip) do
+    set patch = map() // create a map for the patch
+    set patch["op"] = op // either "add" or "remove" the rule
+    set patch["path"] = "/ACL_RULE/" + path // final path is "/ACL_RULE/TABLE_NAME|RULE_NAME"
+    if op == "add" do // content of the ACL_RULE if it's being added
+        set PLACEHOLDER = "((FQDN_IP))" // string inside template that substitutes the ip
+        set rule_content = template.replace(PLACEHOLDER, ip) // insert the actual ip
+
+        rule_value = parse(template) // iterate through the template string to divide it into a mapping for the actual ACL_RULE
+
+        patch["value"] = rule_value // add ACL_RULE contents mapping to the patch
+    end
+    return patch
+end
+
+
+/*Queries SONiC for all existing ACL_RULES,
+filters out the non-fqdn rules (keeps only auto-generated ones),
+and returns all generated rules in a sorted, nested dictionary
+
+Returns:
+    dict: nested mapping of rules with keys: table -> domain -> hash -> list of rules with matching templates but different ips
+*/
+function getExistingRules() do 
+    set FQDN_RULE_PREFIX = "FQDN_RULE_" // constant prefix for all automatically generated rules
+    set acl_rules = configDB.ACL_RULE_TABLE // access the full ACL_RULE_TABLE from ConfigDB
+    set fqdn_rules = map()
+    for (rule in acl_rules) do // acl_rules is the list of rules in the ACL_RULE table
+        if rule.name[0, len(FQDN_RULE_PREFIX)] == FQDN_RULE_PREFIX do
+            table = rule.table_name // what logical ACL_TABLE is the rule in
+            if table not in fqdn_rules do // create new map under the table name, nested in fqdn_rules if the table map doesn't exist yet
+                fqdn_rules[table] = {}
+            end
+
+            domain = rule.name[len(FQDN_RULE_PREFIX):].partition("_")[0] // part of rule name after prefix before the first underscore
+            if domain not in fqdn_rules do  // create new map under the domain name, nested in fqdn_rules[table] if the domain map doesn't exist yet
+                fqdn_rules[table][domain] = {}
+            end
+
+            hash = rule.name[(len(FQDN_RULE_PREFIX) + len(domain) + 1):].partition("_")[0] // part of rule name after prefix and domain, before the first underscore
+            if hash not in fqdn_rules[domain] do // create a new list for each hash, nested in fqdn_rules[table][domain], if it doesn't exist yet
+                fqdn_rules[table][domain][hash] = []
+            end
+
+            fqdn_rules[table][domain][hash].append(rule) // add the rule to the list under its hash and domain
+        end
+    end
+    return fqdn_rules
+end

@@ -1,0 +1,52 @@
+module sonic-fqdn-acl-template {
+
+	yang-version 1.1;
+
+	namespace "http://github.com/sonic-net/sonic-fqdn-acl-template";
+	prefix fqdn;
+
+    import sonic-acl {
+		prefix acl;
+	}
+
+    description "FQDN ACL RULE Template YANG Module for SONiC OS";
+
+	revision 2024-06-14 {
+		description "First Revision";
+	}
+
+    container sonic-fqdn-acl-template {
+
+        container FQDN_ACL_RULE_TEMPLATE {
+
+            description "ACL_RULE Templates with domain instead of IP";
+
+            list FQDN_ACL_RULE_TEMPLATE_LIST {
+                
+                key "TEMPLATE_NAME"
+
+                leaf TEMPLATE_NAME {
+                    type string {
+                        length 1..255;
+                    }
+                }
+
+                leaf ACL_TABLE_NAME {
+                    type leafref {
+                        path "/acl:sonic-acl/acl:ACL_TABLE/acl:ACL_TABLE_LIST/acl:ACL_TABLE_NAME";
+                    }
+                }
+
+                leaf DOMAIN {
+                    type string {
+                        pattern '\b((?=[a-z0-9-]{1,63}\.)(xn--)?[a-z0-9]+(-[a-z0-9]+)*\.)+[a-z]{2,63}\b';
+                    }
+                }
+
+                leaf RULE_TEMPLATE {
+                    type string;
+                }
+            }
+        }
+    } 
+}
