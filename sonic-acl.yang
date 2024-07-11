@@ -1,15 +1,10 @@
 /* this is sonic py yang model */
-module sonic-fqdn-acl-template {
+module sonic-acl {
 
 	yang-version 1.1;
 
-	namespace "http://github.com/sonic-net/sonic-fqdn-acl-template";
-	prefix fqdn;
-
-	import sonic-acl {
-		prefix acl;
-		revision-date 2019-07-01;
-	}
+	namespace "http://github.com/sonic-net/sonic-acl";
+	prefix acl;
 
 	import ietf-inet-types {
 		prefix inet;
@@ -38,21 +33,21 @@ module sonic-fqdn-acl-template {
 		prefix sms;
 	}
 
-	description "FQDN YANG Module for SONiC OS";
+	description "ACL YANG Module for SONiC OS";
 
-	revision 2024-06-28 {
+	revision 2019-07-01 {
 		description "First Revision";
 	}
 
-	container sonic-fqdn-acl-template {
+	container sonic-acl {
 
-		container FQDN_ACL_RULE_TEMPLATE {
+		container ACL_RULE {
 
-			description "FQDN_ACL_RULE_TEMPLATE part of config_db.json";
+			description "ACL_RULE part of config_db.json";
 
-			list FQDN_ACL_RULE_TEMPLATE_LIST {
+			list ACL_RULE_LIST {
 
-				key "TEMPLATE_NAME";
+				key "ACL_TABLE_NAME RULE_NAME";
 
 				leaf ACL_TABLE_NAME {
 					type leafref {
@@ -60,31 +55,18 @@ module sonic-fqdn-acl-template {
 					}
 				}
 
-				leaf TEMPLATE_NAME {
+				leaf RULE_NAME {
 					type string {
-						pattern "^(?!.*_).{1,255}$";
+						length 1..255;
 					}
 				}
-
-				choice src_dst_domain {
-					mandatory true;
-
-					leaf SRC_DOMAIN {
-						type inet:domain-name;
-					}
-
-					leaf DST_DOMAIN {
-						type inet:domain-name;
-					}
-				}
-
 
 				leaf PACKET_ACTION {
 					type stypes:packet_action;
 				}
 
-				/* Validating 'PACKET_ACTION' exist if FQDN type is 'CTRLPLANE' */
-				must "(not(/acl:sonic-acl/acl:ACL_TABLE/acl:ACL_TABLE_LIST[ACL_TABLE_NAME=current()/acl:ACL_TABLE_NAME]/acl:type = 'CTRLPLANE')) or (boolean(PACKET_ACTION))";
+				/* Validating 'PACKET_ACTION' exist if ACL type is 'CTRLPLANE' */
+				must "(not(../../ACL_TABLE/ACL_TABLE_LIST[ACL_TABLE_NAME=current()/ACL_TABLE_NAME]/type = 'CTRLPLANE')) or (boolean(PACKET_ACTION))";
 
 				leaf MIRROR_INGRESS_ACTION {
 					type leafref {
@@ -297,12 +279,104 @@ module sonic-fqdn-acl-template {
 					}
 				}
 			}
-			/* end of FQDN_ACL_RULE_TEMPLATE_LIST */
+			/* end of ACL_RULE_LIST */
 		}
-		/* end of container FQDN_ACL_RULE_TEMPLATE */
+		/* end of container ACL_RULE */
 
+		container ACL_TABLE_TYPE {
+			list ACL_TABLE_TYPE_LIST {
+				key "ACL_TABLE_TYPE_NAME";
 
+				leaf ACL_TABLE_TYPE_NAME {
+					type string;
+				}
+
+				leaf-list MATCHES {
+					type string;
+					min-elements 1;
+				}
+
+				leaf-list ACTIONS {
+					type string;
+					default "";
+				}
+
+				leaf-list BIND_POINTS {
+					type enumeration {
+						enum PORT;
+						enum PORTCHANNEL;
+					}
+					min-elements 1;
+				}
+			}
+		}
+
+		container ACL_TABLE {
+
+			description "ACL_TABLE part of config_db.json";
+
+			list ACL_TABLE_LIST {
+
+				key "ACL_TABLE_NAME";
+
+				leaf ACL_TABLE_NAME {
+					type string;
+				}
+
+				leaf policy_desc {
+					type string {
+						length 1..255;
+					}
+				}
+
+				leaf type {
+					mandatory true;
+					type union {
+						type leafref {
+							path "/acl:sonic-acl/acl:ACL_TABLE_TYPE/acl:ACL_TABLE_TYPE_LIST/acl:ACL_TABLE_TYPE_NAME";
+						}
+						type stypes:acl_table_type;
+					}
+				}
+
+				leaf stage {
+					type string {
+						pattern "ingress|egress|INGRESS|EGRESS";
+					}
+					default "INGRESS";
+				}
+
+				leaf-list services {
+					type string;
+				}
+
+				/* Validating 'services' exist if ACL type is 'CTRLPLANE' */
+				must "(not(type = 'CTRLPLANE')) or (boolean(services))";
+
+				leaf-list ports {
+					/* union of leafref is allowed in YANG 1.1 */
+					type union {
+						type leafref {
+							path /port:sonic-port/port:PORT/port:PORT_LIST/port:name;
+						}
+						type leafref {
+							path /lag:sonic-portchannel/lag:PORTCHANNEL/lag:PORTCHANNEL_LIST/lag:name;
+						}
+						type string {
+							pattern "";
+						}
+					}
+					/* Today in SONiC, we do not delete the list once
+					 * created, instead we set to empty list. Due to that
+					 * below default values are needed.
+					 */
+					default "";
+				}
+			}
+			/* end of ACL_TABLE_LIST */
+		}
+        /* end of container ACL_TABLE */
 	}
-    /* end of container sonic-fqdn-acl-template */
+    /* end of container sonic-acl */
 }
-/* end of module sonic-fqdn-acl-template */
+/* end of module sonic-acl */
