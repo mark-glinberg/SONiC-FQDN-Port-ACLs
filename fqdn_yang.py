@@ -1,5 +1,5 @@
 # Open and read original sonic-acl.yang file
-directory_path = "\\etc\\sonic\\yang-models\\"
+directory_path = "/usr/local/yang-models/"
 with open(directory_path + "sonic-acl.yang", "r") as f:
     acl_yang = f.readlines()
 
@@ -59,47 +59,65 @@ for i in range(len(acl_yang)):
     #                 '\n']
     #     fqdn_yang.extend(type_def)
 
-    # Modify RULE_NAME leaf to TEMPLATE_NAME leaf and add domain leaf
+    # Modify RULE_NAME leaf to TEMPLATE_NAME leaf and add domain choice
     if "leaf RULE_NAME" in new_line:
         new_leafs = ['\t\t\t\tleaf TEMPLATE_NAME {\n',
-                              '\t\t\t\t\ttype string {\n',
-                              '\t\t\t\t\t\tpattern "^(?!.*_).{1,255}$";\n'
-                              '\t\t\t\t\t}\n',
-                              '\t\t\t\t}\n',
-                              '\n',
-                              '\t\t\t\tchoice src_dst_domain {\n',
-                              '\t\t\t\t\tmandatory true;\n',
-                              '\n',
-                              '\t\t\t\t\tleaf SRC_DOMAIN {\n',
-                              '\t\t\t\t\t\ttype inet:domain-name;\n'
-                              '\t\t\t\t\t}\n',
-                              '\n',
-                              '\t\t\t\t\tleaf DST_DOMAIN {\n',
-                              '\t\t\t\t\t\ttype inet:domain-name;\n'
-                              '\t\t\t\t\t}\n',
-                              '\t\t\t\t}\n',
-                              '\n']
+                     '\t\t\t\t\ttype string {\n',
+                     '\t\t\t\t\t\tpattern "([^_]){1,255}";\n'
+                     '\t\t\t\t\t}\n',
+                     '\t\t\t\t}\n',
+                     '\n',
+                     '\t\t\t\tchoice src_dst_domain {\n',
+                     '\t\t\t\t\tmandatory true;\n',
+                     '\n',
+                     '\t\t\t\t\tcase source_domain {\n',
+                     '\t\t\t\t\t\tleaf SRC_DOMAIN {\n',
+                     '\t\t\t\t\t\t\ttype inet:domain-name;\n',
+                     '\t\t\t\t\t\t}\n',
+                     '\t\t\t\t\t}\n',
+                     '\n',
+                     '\t\t\t\t\tcase dest_domain {\n',
+                     '\t\t\t\t\t\tleaf DST_DOMAIN {\n',
+                     '\t\t\t\t\t\t\ttype inet:domain-name;\n',
+                     '\t\t\t\t\t\t}\n',
+                     '\t\t\t\t\t}\n',
+                     '\t\t\t\t}\n']
         fqdn_yang.extend(new_leafs)
         extra_container = True
 
-    # # Add DOMAIN leaf
-    # if "leaf PACKET_ACTION" in new_line:
-    #     leaf_domain = [#'\t\t\t\tleaf DOMAIN {\n',
-    #                 #    '\t\t\t\t\ttype inet:domain-name;\n'
-    #                 #    '\t\t\t\t}\n',
-    #                    '\t\t\t\tchoice src_dst_domain {\n',
-    #                    '\t\t\t\t\tmandatory true;\n',
-    #                    '\n',
-    #                    '\t\t\t\t\tleaf SRC_DOMAIN {\n',
-    #                    '\t\t\t\t\t\ttype inet:domain-name;\n'
-    #                    '\t\t\t\t\t}\n',
-    #                    '\n',
-    #                    '\t\t\t\t\tleaf DST_DOMAIN {\n',
-    #                    '\t\t\t\t\t\ttype inet:domain-name;\n'
-    #                    '\t\t\t\t\t}\n',
-    #                    '\t\t\t\t}\n',
-    #                    '\n']
-    #     fqdn_yang.extend(leaf_domain)
+    # Modify src_dst_address to account for src_dst_domain
+    if "choice src_dst_address" in new_line:
+        choice_address = ['\t\t\t\tchoice src_dst_address {\n',
+                          '\t\t\t\t\tcase src_ip4_prefix {\n',
+                          '\t\t\t\t\t\twhen "not(SRC_DOMAIN) and (not(IP_TYPE) or boolean(IP_TYPE[.=\'ANY\' or .=\'IP\' or .=\'IPV4\' or .=\'IPv4ANY\' or .=\'IPV4ANY\' or .=\'ARP\']))";\n',
+                          '\t\t\t\t\t\tleaf SRC_IP {\n',
+                          '\t\t\t\t\t\t\ttype inet:ipv4-prefix;\n'
+                          '\t\t\t\t\t\t}\n',
+                          '\t\t\t\t\t}\n',
+                          '\n',
+                          '\t\t\t\t\tcase src_ip6_prefix {\n',
+                          '\t\t\t\t\t\twhen "not(SRC_DOMAIN) and (not(IP_TYPE) or boolean(IP_TYPE[.=\'ANY\' or .=\'IP\' or .=\'IPV6\' or .=\'IPv6ANY\' or .=\'IPV6ANY\']))";\n',
+                          '\t\t\t\t\t\tleaf SRC_IPV6 {\n',
+                          '\t\t\t\t\t\t\ttype inet:ipv6-prefix;\n'
+                          '\t\t\t\t\t\t}\n',
+                          '\t\t\t\t\t}\n',
+                          '\n',
+                          '\t\t\t\t\tcase dst_ip4_prefix {\n',
+                          '\t\t\t\t\t\twhen "not(DST_DOMAIN) and (not(IP_TYPE) or boolean(IP_TYPE[.=\'ANY\' or .=\'IP\' or .=\'IPV4\' or .=\'IPv4ANY\' or .=\'IPV4ANY\' or .=\'ARP\']))";\n',
+                          '\t\t\t\t\t\tleaf DST_IP {\n',
+                          '\t\t\t\t\t\t\ttype inet:ipv4-prefix;\n'
+                          '\t\t\t\t\t\t}\n',
+                          '\t\t\t\t\t}\n',
+                          '\n',
+                          '\t\t\t\t\tcase dst_ip6_prefix {\n',
+                          '\t\t\t\t\t\twhen "not(DST_DOMAIN) and (not(IP_TYPE) or boolean(IP_TYPE[.=\'ANY\' or .=\'IP\' or .=\'IPV6\' or .=\'IPv6ANY\' or .=\'IPV6ANY\']))";\n',
+                          '\t\t\t\t\t\tleaf DST_IPV6 {\n',
+                          '\t\t\t\t\t\t\ttype inet:ipv6-prefix;\n'
+                          '\t\t\t\t\t\t}\n',
+                          '\t\t\t\t\t}\n',
+                          '\t\t\t\t}\n',]
+        fqdn_yang.extend(choice_address)
+        extra_container = True
 
     # Change relative paths to absolute paths
     if "../.." in new_line:

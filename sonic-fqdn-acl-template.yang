@@ -62,22 +62,25 @@ module sonic-fqdn-acl-template {
 
 				leaf TEMPLATE_NAME {
 					type string {
-						pattern "^(?!.*_).{1,255}$";
+						pattern "([^_]){1,255}";
 					}
 				}
 
 				choice src_dst_domain {
 					mandatory true;
 
-					leaf SRC_DOMAIN {
-						type inet:domain-name;
+					case source_domain {
+						leaf SRC_DOMAIN {
+							type inet:domain-name;
+						}
 					}
 
-					leaf DST_DOMAIN {
-						type inet:domain-name;
+					case dest_domain {
+						leaf DST_DOMAIN {
+							type inet:domain-name;
+						}
 					}
 				}
-
 
 				leaf PACKET_ACTION {
 					type stypes:packet_action;
@@ -110,32 +113,29 @@ module sonic-fqdn-acl-template {
 				}
 
 				choice src_dst_address {
-					case l2_src_dst_address {
-						when "(/acl:sonic-acl/acl:ACL_TABLE/acl:ACL_TABLE_LIST[ACL_TABLE_NAME=current()/acl:ACL_TABLE_NAME]/acl:type = 'L2')";
-						leaf SRC_MAC {
-                            type stypes:mac-addr-and-mask;
-						}
-						leaf DST_MAC {
-                            type stypes:mac-addr-and-mask;
-						}
-					}
-					case ip4_prefix {
-						when "not(IP_TYPE) or boolean(IP_TYPE[.='ANY' or .='IP' or .='IPV4' or .='IPv4ANY' or .='IPV4ANY' or .='ARP'])";
+					case src_ip4_prefix {
+						when "not(SRC_DOMAIN) and (not(IP_TYPE) or boolean(IP_TYPE[.='ANY' or .='IP' or .='IPV4' or .='IPv4ANY' or .='IPV4ANY' or .='ARP']))";
 						leaf SRC_IP {
 							type inet:ipv4-prefix;
 						}
+					}
 
+					case src_ip6_prefix {
+						when "not(SRC_DOMAIN) and (not(IP_TYPE) or boolean(IP_TYPE[.='ANY' or .='IP' or .='IPV6' or .='IPv6ANY' or .='IPV6ANY']))";
+						leaf SRC_IPV6 {
+							type inet:ipv6-prefix;
+						}
+					}
+
+					case dst_ip4_prefix {
+						when "not(DST_DOMAIN) and (not(IP_TYPE) or boolean(IP_TYPE[.='ANY' or .='IP' or .='IPV4' or .='IPv4ANY' or .='IPV4ANY' or .='ARP']))";
 						leaf DST_IP {
 							type inet:ipv4-prefix;
 						}
 					}
 
-					case ip6_prefix {
-						when "not(IP_TYPE) or boolean(IP_TYPE[.='ANY' or .='IP' or .='IPV6' or .='IPv6ANY' or .='IPV6ANY'])";
-						leaf SRC_IPV6 {
-							type inet:ipv6-prefix;
-						}
-
+					case dst_ip6_prefix {
+						when "not(DST_DOMAIN) and (not(IP_TYPE) or boolean(IP_TYPE[.='ANY' or .='IP' or .='IPV6' or .='IPv6ANY' or .='IPV6ANY']))";
 						leaf DST_IPV6 {
 							type inet:ipv6-prefix;
 						}
