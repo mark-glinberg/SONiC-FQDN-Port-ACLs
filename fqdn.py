@@ -60,7 +60,6 @@ async def getExistingRules():
 
             value = {}
             value["number"] = int(number)
-            value["src_dst"] = src_dst
 
             ip_types = ["IP", "IPV6"]
             
@@ -88,10 +87,6 @@ async def getExistingRules():
             rules[table][src_dst][domain][template_name].append(value)
     
     return rules
-# rules = getExistingRules()
-
-# with open("out.json", "w") as f:
-#     json.dump(rules, f, indent=4)
 
 async def getTemplates():
     """Queries SONiC for all existing templates and returns them as a list
@@ -143,14 +138,6 @@ async def getTemplates():
         template["new_ips"] = await dns_task
     
     return templates, seen_templates
-# templates = getTemplates()
-
-# with open("out.json", "w") as f:
-#     json.dump(templates, f, indent=4)
-
-# for _, template in templates.items():
-#     hash = hashlib.sha256((json.dumps(template["RULE_TEMPLATE"], sort_keys=True)).encode(encoding="utf-8", errors="replace")).hexdigest()[:5]
-#     print(hash)
 
 async def get_ip_addresses(domain, ip_version):
     """Function that resolves a domain name to IP addresses of a certain version
@@ -162,26 +149,35 @@ async def get_ip_addresses(domain, ip_version):
     Returns:
         set: IP addresses for the given domain, or empty set if the domain isn't found
     """
-    # with open("nslookup.json") as f:
-    #     json_out = json.load(f)
-    # ips = set(json_out.get(domain, []))
-
     ips = set()
 
-    socket_outs = socket.getaddrinfo(domain, None)
+    # with open("nslookup.json") as f:
+    #     json_out = json.load(f)
+    # out = set(json_out.get(domain, []))
 
-    if ip_version == "either":
-        socket_outs = socket.getaddrinfo(domain, None)
-    elif ip_version == "ipv4":
-        socket_outs = socket.getaddrinfo(domain, None, family=socket.AF_INET)
-    elif ip_version == "ipv6":
-        socket_outs = socket.getaddrinfo(domain, None, family=socket.AF_INET6)
+    # for ip in out:
+    #     ipaddress_obj = ipaddress.ip_address(ip)
+    #     if ipaddress_obj.version == 4 and (ip_version == "ipv4" or ip_version == "either"):
+    #         ips.add(ip + "/32")
+    #     elif ipaddress_obj.version == 6 and (ip_version == "ipv6" or ip_version == "either"):
+    #         ips.add(ip + "/128")
+
+    socket_outs = []
+    if ip_version == "ipv4" or ip_version == "either":
+        try:
+            socket_outs.extend(socket.getaddrinfo(domain, None, family=socket.AF_INET))
+        except: # If domain doesn't have any IPv4 addresses
+            socket_outs.extend([])
+    if ip_version == "ipv6" or ip_version == "either":
+        try:
+            socket_outs.extend(socket.getaddrinfo(domain, None, family=socket.AF_INET6))
+        except: # If domain doesn't have any IPv6 addresses
+            socket_outs.extend([])
 
     for socket_out in socket_outs:
         ips.add(socket_out[4][0] + ("/32" if socket_out[0] == socket.AF_INET else "/128"))
 
     return ips
-#print(asyncio.run(get_ip_addresses("google.com", "either")))
 
 async def deleteOldRules(seen_templates, existing_rules):
     """Helper function that iterates through all existing rules and creates remove patches for any that don't have an existing template
@@ -225,7 +221,8 @@ async def updateRules():
     # only replaces ips, doesn't update rules if they were changed
     for template_name, template in templates.items():
         src_dst = template["src_dst"]
-        domain = template[src_dst + "_DOMAIN"][:7]
+        domain = template[src_dst + "_DOMAIN"]
+        domain = domain[:7] if len(domain) >= 7 else domain
         table = template["ACL_TABLE_NAME"]
             
         rule_name = PREFIX + src_dst + "_" + domain + "_" + template_name + "_"
@@ -278,11 +275,12 @@ async def updateRules():
 
     return patches
 
-# patches = asyncio.run(updateRules()) # generate all the patches to update the ACL_RULES
+if __name__ == '__main__':
+    patches = asyncio.run(updateRules()) # generate all the patches to update the ACL_RULES
 
-# with open("patches.json", "w") as f: # dump the patches in a json
-#     json.dump(patches, f, indent=4)
+    # with open("patches.json", "w") as f: # dump the patches in a json
+    #     json.dump(patches, f, indent=4)
 
-subprocess.run("sudo config apply-patch patches.json", shell=True) # apply the patches using GCU
+    subprocess.run("sudo config apply-patch patches.json", shell=True) # apply the patches using GCU
 
-subprocess.run("sudo rm patches.json", shell=True) # delete the json
+    subprocess.run("sudo rm patches.json", shell=True) # delete the json

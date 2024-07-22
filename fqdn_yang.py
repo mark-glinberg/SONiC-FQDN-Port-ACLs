@@ -1,5 +1,5 @@
 # Open and read original sonic-acl.yang file
-directory_path = "/usr/local/yang-models/"
+directory_path = ""
 with open(directory_path + "sonic-acl.yang", "r") as f:
     acl_yang = f.readlines()
 
@@ -58,6 +58,12 @@ for i in range(len(acl_yang)):
     #                 '\t}\n',
     #                 '\n']
     #     fqdn_yang.extend(type_def)
+
+    if "leaf ACL_TABLE_NAME" in new_line and "type leafref" in acl_yang[i+1]:
+        new_ACL_TABLE_Lines = ['\t\t\t\tleaf ACL_TABLE_NAME {\n',
+                               '\t\t\t\t\tmandatory true;\n']
+        fqdn_yang.extend(new_ACL_TABLE_Lines)
+        continue
 
     # Modify RULE_NAME leaf to TEMPLATE_NAME leaf and add domain choice
     if "leaf RULE_NAME" in new_line:

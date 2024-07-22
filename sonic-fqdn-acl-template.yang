@@ -55,6 +55,7 @@ module sonic-fqdn-acl-template {
 				key "TEMPLATE_NAME";
 
 				leaf ACL_TABLE_NAME {
+					mandatory true;
 					type leafref {
 						path "/acl:sonic-acl/acl:ACL_TABLE/acl:ACL_TABLE_LIST/acl:ACL_TABLE_NAME";
 					}
