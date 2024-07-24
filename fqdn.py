@@ -3,6 +3,8 @@ import subprocess
 import ipaddress
 import socket
 import asyncio
+import psutil
+import time
 
 PREFIX = "FQDN_RULE_"
 
@@ -49,7 +51,10 @@ async def getExistingRules():
     rules = {}
 
     sonic_out = subprocess.run("sonic-cfggen -d --var-json ACL_RULE", shell=True, capture_output=True, text=True)
-    existing_rules = json.loads(sonic_out.stdout)
+    if sonic_out.stdout:
+        existing_rules = json.loads(sonic_out.stdout)
+    else:
+        existing_rules = {}
     # with open("rules.json") as f: # Need to replace with the above commands
     #     existing_rules = json.load(f)
 
@@ -95,11 +100,15 @@ async def getTemplates():
         list: dictionaries of all existing templates
     """
     sonic_out = subprocess.run("sonic-cfggen -d --var-json FQDN_ACL_RULE_TEMPLATE", shell=True, capture_output=True, text=True)
-    templates = json.loads(sonic_out.stdout)
+    if sonic_out.stdout:
+        templates = json.loads(sonic_out.stdout)
+    else:
+        templates = {}
     # with open("templates.json") as f: # need to replace with the above commands
     #     templates = json.load(f)
     
     seen_templates = set()
+    domains = set()
 
     for template_name, template in templates.items():
         if "SRC_IP" in template or "DST_IP" in template:
@@ -117,6 +126,7 @@ async def getTemplates():
                 ip_version = "either"
         else:
             ip_version = "either"
+        template["ip_version"] = ip_version
 
         if "SRC_DOMAIN" in template:
             template["src_dst"] = "SRC"
@@ -124,59 +134,80 @@ async def getTemplates():
             template["src_dst"] = "DST"
             
         domain = template[template["src_dst"] + "_DOMAIN"]
-        dns_task = asyncio.create_task(get_ip_addresses(domain, ip_version))
+        if domain not in domains:
+            domains.add(domain)
         
         seen_templates.add((template["ACL_TABLE_NAME"], template["src_dst"], domain[:7], template_name))
 
         template["RULE_TEMPLATE"] = {}
         template_keys = [k for k, v in template.items()]
         for k in template_keys:
-            if not (k == "ACL_TABLE_NAME" or k == "SRC_DOMAIN" or k == "DST_DOMAIN" or  k == "new_ips" or k == "src_dst" or k == "RULE_TEMPLATE"):
+            if not (k == "ACL_TABLE_NAME" or k == "SRC_DOMAIN" or k == "DST_DOMAIN" or  k == "ip_version" or k == "src_dst" or k == "RULE_TEMPLATE"):
                 template["RULE_TEMPLATE"][k] = template[k]
                 del template[k]
-
-        template["new_ips"] = await dns_task
     
-    return templates, seen_templates
+    return templates, seen_templates, domains
 
-async def get_ip_addresses(domain, ip_version):
-    """Function that resolves a domain name to IP addresses of a certain version
+async def query_dns(domain, family):
+    """Function that resolves the given domain name to the given family of ip addreses
 
     Args:
-        domain (String): domain name to resolve IP addresses for
-        ip_version (String): allows resolution to ipv4, ipv6, or either protocol
+        domain (String): a fully-qualified domain name
+        family (enum): a socket-defined family (socket.AF_INET, socket.AF_INET6, socket.AF_UNSPEC)
 
     Returns:
-        set: IP addresses for the given domain, or empty set if the domain isn't found
+        string: name of the domain associated with the output ips
+        list: tuples of ips and families outputted by the socket call, empty if there was an encountered error
     """
-    ips = set()
+    try:
+        ips = socket.getaddrinfo(domain, None, family=family)
+    except:
+        ips = []
+    return domain, ips
+
+async def get_ip_addresses(domains):
+    """Function that resolves all the unique domain names into a dictionary
+
+    Args:
+        domains (set): set of unique domains
+
+    Returns:
+        dict: ip addresses of each domain organized into ipv4 and ipv6 addresses
+    """
+    ips = {}
 
     # with open("nslookup.json") as f:
     #     json_out = json.load(f)
-    # out = set(json_out.get(domain, []))
+    # outs = []
+    # for domain in domains:
+    #     outs.append((domain, json_out.get(domain, [])))
 
-    # for ip in out:
-    #     ipaddress_obj = ipaddress.ip_address(ip)
-    #     if ipaddress_obj.version == 4 and (ip_version == "ipv4" or ip_version == "either"):
-    #         ips.add(ip + "/32")
-    #     elif ipaddress_obj.version == 6 and (ip_version == "ipv6" or ip_version == "either"):
-    #         ips.add(ip + "/128")
-
-    socket_outs = []
-    if ip_version == "ipv4" or ip_version == "either":
-        try:
-            socket_outs.extend(socket.getaddrinfo(domain, None, family=socket.AF_INET))
-        except: # If domain doesn't have any IPv4 addresses
-            socket_outs.extend([])
-    if ip_version == "ipv6" or ip_version == "either":
-        try:
-            socket_outs.extend(socket.getaddrinfo(domain, None, family=socket.AF_INET6))
-        except: # If domain doesn't have any IPv6 addresses
-            socket_outs.extend([])
+    # for out in outs:
+    #     domain, ipaddresses = out
+    #     if domain not in ips:
+    #         ips[domain] = {"ipv4": set(), "ipv6": set()}
+    #     for ip in ipaddresses:
+    #         ipaddress_obj = ipaddress.ip_address(ip)
+    #         if ipaddress_obj.version == 4:
+    #             ips[domain]["ipv4"].add(ip + "/32")
+    #         elif ipaddress_obj.version == 6:
+    #             ips[domain]["ipv4"].add(ip + "/128")    
+    
+    tasks = []
+    for domain in domains:
+        for family in [socket.AF_INET, socket.AF_INET6]:
+            tasks.append(asyncio.create_task(query_dns(domain, family)))
+            ips[domain] = {"ipv4": set(), "ipv6": set()}
+    socket_outs = await asyncio.gather(*tasks)
 
     for socket_out in socket_outs:
-        ips.add(socket_out[4][0] + ("/32" if socket_out[0] == socket.AF_INET else "/128"))
-
+        domain, socket_ips = socket_out
+        for socket_ip in socket_ips:
+            if socket_ip[0] == socket.AF_INET:
+                ips[domain]["ipv4"].add(socket_ip[4][0] + "/32")
+            else:
+                ips[domain]["ipv6"].add(socket_ip[4][0] + "/128")
+    
     return ips
 
 async def deleteOldRules(seen_templates, existing_rules):
@@ -212,9 +243,13 @@ async def updateRules():
     templates_task = asyncio.create_task(getTemplates())
     rules_task = asyncio.create_task(getExistingRules())
 
-    patches = []
+    templates, seen_templates, domains = await templates_task
+    ips_task = asyncio.create_task(get_ip_addresses(domains))
+
     existing_rules = await rules_task
-    templates, seen_templates = await templates_task
+    queried_ips = await ips_task
+    
+    patches = []
 
     delete_task = asyncio.create_task(deleteOldRules(seen_templates, existing_rules))
 
@@ -240,7 +275,10 @@ async def updateRules():
                     modified_rules[rule["ip"]] = rule
                     nums_used.add(rule["number"])
         
-        new_ips = template["new_ips"]
+        if template["ip_version"] == "either":
+            new_ips = queried_ips[template[src_dst + "_DOMAIN"]]["ipv4"] | queried_ips[template[src_dst + "_DOMAIN"]]["ipv6"]
+        else:
+            new_ips = queried_ips[template[src_dst + "_DOMAIN"]][template["ip_version"]]
 
         old_matching_ips = set(matching_rules.keys()).difference(new_ips)
         old_modified_ips = set(modified_rules.keys())
@@ -275,12 +313,24 @@ async def updateRules():
 
     return patches
 
-if __name__ == '__main__':
+def main():
+    cpu_1 = psutil.cpu_percent(interval=None)
+    time_1 = time.time()
     patches = asyncio.run(updateRules()) # generate all the patches to update the ACL_RULES
 
-    # with open("patches.json", "w") as f: # dump the patches in a json
-    #     json.dump(patches, f, indent=4)
+    with open("patches.json", "w") as f: # dump the patches in a json
+        json.dump(patches, f, indent=4)
+    time_2 = time.time()
+    cpu_2 = psutil.cpu_percent(interval=None)
+
+    final_cpu = cpu_2
+    final_time = time_2 - time_1
 
     subprocess.run("sudo config apply-patch patches.json", shell=True) # apply the patches using GCU
 
     subprocess.run("sudo rm patches.json", shell=True) # delete the json
+
+    return final_time, final_cpu
+
+if __name__ == '__main__':
+    main()

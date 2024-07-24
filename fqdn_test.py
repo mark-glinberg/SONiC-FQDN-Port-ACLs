@@ -77,123 +77,29 @@ class TestPatches(unittest.TestCase):
 
 class TestIPs(unittest.TestCase):
     def setUp(self) -> None:  
-        self.either = "either"
-        self.ipv4 = "ipv4"
-        self.ipv6 = "ipv6"
-        self.domain_1 = "microsoft.com"
-        self.domain_2 = "amazon.com"
+        self.domains = ["microsoft.com", "amazon.com"]
 
-    def test_Either(self):
-        out_1 = asyncio.run(fqdn.get_ip_addresses(self.domain_1, self.either))
+    def testCorrectIPs(self):
+        out = asyncio.run(fqdn.get_ip_addresses(self.domains))
 
-        nslookup_cmd = "nslookup " + self.domain_1
-        nslookup_out = subprocess.run(nslookup_cmd, capture_output=True, text=True).stdout
-        if "Addresses:" in nslookup_out:
-            expected_ips = nslookup_out.split("Addresses:")[1].split()
-        else:
-            expected_ips = nslookup_out.split("Address:")[2].split()
-        expected_1 = set()
-        for ip in expected_ips:
-            ipaddress_obj = ipaddress.ip_address(ip)
+        expected = {}
+        for domain in self.domains:
+            nslookup_cmd = "nslookup " + domain
+            nslookup_out = subprocess.run(nslookup_cmd, capture_output=True, text=True).stdout
+            if "Addresses:" in nslookup_out:
+                expected_ips = nslookup_out.split("Addresses:")[1].split()
+            else:
+                expected_ips = nslookup_out.split("Address:")[2].split()
 
-            if ipaddress_obj.version == 4:
-                expected_1.add(ip + "/32")
-            elif ipaddress_obj.version == 6:
-                expected_1.add(ip + "/128")
+            expected[domain] = {"ipv4": set(), "ipv6": set()}
+            for ip in expected_ips:
+                ipaddress_obj = ipaddress.ip_address(ip)
 
-        out_2 = asyncio.run(fqdn.get_ip_addresses(self.domain_2, self.either))
-        
-        nslookup_cmd = "nslookup " + self.domain_2
-        nslookup_out = subprocess.run(nslookup_cmd, capture_output=True, text=True).stdout
-        if "Addresses:" in nslookup_out:
-            expected_ips = nslookup_out.split("Addresses:")[1].split()
-        else:
-            expected_ips = nslookup_out.split("Address:")[2].split()
-        expected_2 = set()
-        for ip in expected_ips:
-            ipaddress_obj = ipaddress.ip_address(ip)
-
-            if ipaddress_obj.version == 4:
-                expected_2.add(ip + "/32")
-            elif ipaddress_obj.version == 6:
-                expected_2.add(ip + "/128")
-        
-        self.assertEqual(out_1, expected_1)
-        self.assertEqual(out_2, expected_2)
-        self.assertNotEqual(out_1, expected_2)
-        self.assertNotEqual(out_2, expected_1)
-
-    def test_ipv4(self):
-        out_1 = asyncio.run(fqdn.get_ip_addresses(self.domain_1, self.ipv4))
-        
-        nslookup_cmd = "nslookup " + self.domain_1
-        nslookup_out = subprocess.run(nslookup_cmd, capture_output=True, text=True).stdout
-        if "Addresses:" in nslookup_out:
-            expected_ips = nslookup_out.split("Addresses:")[1].split()
-        else:
-            expected_ips = nslookup_out.split("Address:")[2].split()
-        expected_1 = set()
-        for ip in expected_ips:
-            ipaddress_obj = ipaddress.ip_address(ip)
-
-            if ipaddress_obj.version == 4:
-                expected_1.add(ip + "/32")
-
-        out_2 = asyncio.run(fqdn.get_ip_addresses(self.domain_2, self.ipv4))
-          
-        nslookup_cmd = "nslookup " + self.domain_2
-        nslookup_out = subprocess.run(nslookup_cmd, capture_output=True, text=True).stdout
-        if "Addresses:" in nslookup_out:
-            expected_ips = nslookup_out.split("Addresses:")[1].split()
-        else:
-            expected_ips = nslookup_out.split("Address:")[2].split()
-        expected_2 = set()
-        for ip in expected_ips:
-            ipaddress_obj = ipaddress.ip_address(ip)
-
-            if ipaddress_obj.version == 4:
-                expected_2.add(ip + "/32")
-
-        self.assertEqual(out_1, expected_1)
-        self.assertEqual(out_2, expected_2)
-        self.assertNotEqual(out_1, expected_2)
-        self.assertNotEqual(out_2, expected_1)
-
-    def test_ipv6(self):
-        out_1 = asyncio.run(fqdn.get_ip_addresses(self.domain_1, self.ipv6))
-        
-        nslookup_cmd = "nslookup " + self.domain_1
-        nslookup_out = subprocess.run(nslookup_cmd, capture_output=True, text=True).stdout
-        if "Addresses:" in nslookup_out:
-            expected_ips = nslookup_out.split("Addresses:")[1].split()
-        else:
-            expected_ips = nslookup_out.split("Address:")[2].split()
-        expected_1 = set()
-        for ip in expected_ips:
-            ipaddress_obj = ipaddress.ip_address(ip)
-
-            if ipaddress_obj.version == 6:
-                expected_1.add(ip + "/128")
-
-        out_2 = asyncio.run(fqdn.get_ip_addresses(self.domain_2, self.ipv6))
-        
-        nslookup_cmd = "nslookup " + self.domain_2
-        nslookup_out = subprocess.run(nslookup_cmd, capture_output=True, text=True).stdout
-        if "Addresses:" in nslookup_out:
-            expected_ips = nslookup_out.split("Addresses:")[1].split()
-        else:
-            expected_ips = nslookup_out.split("Address:")[2].split()
-        expected_2 = set()
-        for ip in expected_ips:
-            ipaddress_obj = ipaddress.ip_address(ip)
-
-            if ipaddress_obj.version == 6:
-                expected_2.add(ip + "/128")
-        
-        self.assertEqual(out_1, expected_1)
-        self.assertEqual(out_2, expected_2)
-        self.assertNotEqual(out_1, expected_2)
-        self.assertNotEqual(out_2, expected_1)
+                if ipaddress_obj.version == 4:
+                    expected[domain]["ipv4"].add(ip + "/32")
+                elif ipaddress_obj.version == 6:
+                    expected[domain]["ipv6"].add(ip + "/128")
+        self.assertEqual(expected, out)
 
 class TestRules(unittest.TestCase):        
     def test_Regular_Rule(self):
@@ -967,129 +873,28 @@ class TestRules(unittest.TestCase):
         self.assertEqual(json.dumps(rules), json.dumps(expected))
         
 class TestTemplates(unittest.TestCase):
-    def test_IP(self):
+    def test_Domains(self):
         templates = {"TEMPLATE0": {"PRIORITY": "1",
                                    "PACKET_ACTION": "FORWARD",
                                    "ACL_TABLE_NAME": "TABLE",
-                                   "SRC_DOMAIN": "microsoft.com",
-                                   "SRC_IP": "1.1.1.1/32"},
+                                   "SRC_DOMAIN": "microsoft.com"},
                      "TEMPLATE1": {"PRIORITY": "1",
                                    "PACKET_ACTION": "FORWARD",
                                    "ACL_TABLE_NAME": "TABLE",
-                                   "SRC_DOMAIN": "microsoft.com",
-                                   "SRC_IP": "1.1.1.1/32",
-                                   "IP_TYPE": "IPv4"},
+                                   "DST_DOMAIN": "google.com"},
                      "TEMPLATE2": {"PRIORITY": "1",
                                    "PACKET_ACTION": "FORWARD",
                                    "ACL_TABLE_NAME": "TABLE",
-                                   "SRC_DOMAIN": "microsoft.com",
-                                   "DST_IP": "1.1.1.1/32"},
-                     "TEMPLATE3": {"PRIORITY": "1",
+                                   "DST_DOMAIN": "microsoft.com"},
+                     "TEMPLATE2": {"PRIORITY": "1",
                                    "PACKET_ACTION": "FORWARD",
                                    "ACL_TABLE_NAME": "TABLE",
-                                   "SRC_DOMAIN": "microsoft.com",
-                                   "DST_IP": "1.1.1.1/32",
-                                   "IP_TYPE": "IPv4"},
-                     "TEMPLATE4": {"PRIORITY": "1",
-                                   "PACKET_ACTION": "FORWARD",
-                                   "ACL_TABLE_NAME": "TABLE",
-                                   "SRC_DOMAIN": "microsoft.com",
-                                   "IP_TYPE": "IPV4"},
-                     "TEMPLATE5": {"PRIORITY": "1",
-                                   "PACKET_ACTION": "FORWARD",
-                                   "ACL_TABLE_NAME": "TABLE",
-                                   "SRC_DOMAIN": "microsoft.com",
-                                   "IP_TYPE": "IPv4ANY"},
-                     "TEMPLATE6": {"PRIORITY": "1",
-                                   "PACKET_ACTION": "FORWARD",
-                                   "ACL_TABLE_NAME": "TABLE",
-                                   "SRC_DOMAIN": "microsoft.com",
-                                   "IP_TYPE": "IPV4ANY"},
-                     "TEMPLATE7": {"PRIORITY": "1",
-                                   "PACKET_ACTION": "FORWARD",
-                                   "ACL_TABLE_NAME": "TABLE",
-                                   "SRC_DOMAIN": "microsoft.com",
-                                   "IP_TYPE": "ARP"},
-                     "TEMPLATE8": {"PRIORITY": "1",
-                                   "PACKET_ACTION": "FORWARD",
-                                   "ACL_TABLE_NAME": "TABLE",
-                                   "SRC_DOMAIN": "microsoft.com",
-                                   "SRC_IPV6": "FF01::1111/128"},
-                     "TEMPLATE9": {"PRIORITY": "1",
-                                   "PACKET_ACTION": "FORWARD",
-                                   "ACL_TABLE_NAME": "TABLE",
-                                   "SRC_DOMAIN": "microsoft.com",
-                                   "SRC_IPV6": "FF01::1111/128",
-                                   "IP_TYPE": "IPV6"},
-                     "TEMPLATE10": {"PRIORITY": "1",
-                                   "PACKET_ACTION": "FORWARD",
-                                   "ACL_TABLE_NAME": "TABLE",
-                                   "SRC_DOMAIN": "microsoft.com",
-                                   "DST_IPV6": "FF01::1111/128"},
-                     "TEMPLATE11": {"PRIORITY": "1",
-                                   "PACKET_ACTION": "FORWARD",
-                                   "ACL_TABLE_NAME": "TABLE",
-                                   "SRC_DOMAIN": "microsoft.com",
-                                   "DST_IPV6": "FF01::1111/128",
-                                   "IP_TYPE": "IPV6"},
-                     "TEMPLATE12": {"PRIORITY": "1",
-                                   "PACKET_ACTION": "FORWARD",
-                                   "ACL_TABLE_NAME": "TABLE",
-                                   "SRC_DOMAIN": "microsoft.com",
-                                   "IP_TYPE": "IPV6"},
-                     "TEMPLATE13": {"PRIORITY": "1",
-                                   "PACKET_ACTION": "FORWARD",
-                                   "ACL_TABLE_NAME": "TABLE",
-                                   "SRC_DOMAIN": "microsoft.com",
-                                   "IP_TYPE": "IPv6ANY"},
-                     "TEMPLATE14": {"PRIORITY": "1",
-                                   "PACKET_ACTION": "FORWARD",
-                                   "ACL_TABLE_NAME": "TABLE",
-                                   "SRC_DOMAIN": "microsoft.com",
-                                   "IP_TYPE": "IPV6ANY"},
-                     "TEMPLATE15": {"PRIORITY": "1",
-                                   "PACKET_ACTION": "FORWARD",
-                                   "ACL_TABLE_NAME": "TABLE",
-                                   "SRC_DOMAIN": "microsoft.com",
-                                   "IP_TYPE": "ANY"},
-                     "TEMPLATE16": {"PRIORITY": "1",
-                                   "PACKET_ACTION": "FORWARD",
-                                   "ACL_TABLE_NAME": "TABLE",
-                                   "SRC_DOMAIN": "microsoft.com",
-                                   "IP_TYPE": "IP"},
-                     "TEMPLATE17": {"PRIORITY": "1",
-                                   "PACKET_ACTION": "FORWARD",
-                                   "ACL_TABLE_NAME": "TABLE",
-                                   "SRC_DOMAIN": "microsoft.com"}}
+                                   "DST_DOMAIN": "amazon.com"}}
         writeToFile("templates.json", templates)
 
-        templates, seen_templates = asyncio.run(fqdn.getTemplates())
-        for template_name, template in templates.items():
-            number = template_name[len("TEMPLATE"):]
-            if int(number) < 15:
-                for ip in template["new_ips"]:
-                    address, mask = ip.split("/")
-                    ipaddress_obj = ipaddress.ip_address(address)
-
-                    if int(number) < 8:
-                        self.assertEqual(ipaddress_obj.version, 4)
-                    else:
-                        self.assertEqual(ipaddress_obj.version, 6)
-            else:
-                ipv4 = False
-                ipv6 = False
-                for ip in template["new_ips"]:
-                    address, mask = ip.split("/")
-                    ipaddress_obj = ipaddress.ip_address(address)
-
-                    if ipaddress_obj.version == 4:
-                        ipv4 = True
-                    if ipaddress_obj.version == 6:
-                        ipv6 = True
-                    if ipv4 and ipv6:
-                        break
-                self.assertTrue(ipv4)
-                self.assertTrue(ipv6)
+        templates, seen_templates, domains = asyncio.run(fqdn.getTemplates())
+        expected = set(["microsoft.com", "google.com", "amazon.com"])
+        self.assertEqual(expected, domains)
 
     def test_SRC_DST(self):
         templates = {"TEMPLATE0": {"PRIORITY": "1",
@@ -1122,7 +927,7 @@ class TestTemplates(unittest.TestCase):
                                    "SRC_IPV6": "FF01::1111/32"}}
         writeToFile("templates.json", templates)
 
-        templates, seen_templates = asyncio.run(fqdn.getTemplates())
+        templates, seen_templates, domains = asyncio.run(fqdn.getTemplates())
         for template_name, template in templates.items():
             number = int(template_name[len("TEMPLATE"):])
             if number < 3:
@@ -1168,7 +973,7 @@ class TestTemplates(unittest.TestCase):
                                  "AETH_SYNDROME": "0x99/0x99"}}
         writeToFile("templates.json", template)
 
-        templates, seen_templates = asyncio.run(fqdn.getTemplates())
+        templates, seen_templates, domains = asyncio.run(fqdn.getTemplates())
         expected = {"PRIORITY": "1",
                     "PACKET_ACTION": "FORWARD",
                     "MIRROR_INGRESS_ACTION": "something",
@@ -1238,7 +1043,7 @@ class TestTemplates(unittest.TestCase):
                                    "DST_DOMAIN": "amazon.com"}}
         writeToFile("templates.json", templates)
 
-        templates, seen_templates = asyncio.run(fqdn.getTemplates())
+        templates, seen_templates, domains = asyncio.run(fqdn.getTemplates())
         
         expected = set([("TABLE0", "SRC", "microso", "TEMPLATE0"),
                         ("TABLE1", "SRC", "microso", "TEMPLATE1"),
