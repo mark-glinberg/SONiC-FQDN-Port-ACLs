@@ -276,23 +276,31 @@ async def updateRules():
                     nums_used.add(rule["number"])
         
         if template["ip_version"] == "either":
-            new_ips = queried_ips[template[src_dst + "_DOMAIN"]]["ipv4"] | queried_ips[template[src_dst + "_DOMAIN"]]["ipv6"]
+            current_ips = queried_ips[template[src_dst + "_DOMAIN"]]["ipv4"] | queried_ips[template[src_dst + "_DOMAIN"]]["ipv6"]
         else:
-            new_ips = queried_ips[template[src_dst + "_DOMAIN"]][template["ip_version"]]
+            current_ips = queried_ips[template[src_dst + "_DOMAIN"]][template["ip_version"]]
 
-        old_matching_ips = set(matching_rules.keys()).difference(new_ips)
-        old_modified_ips = set(modified_rules.keys())
-        extra_new_ips = new_ips.difference(set(matching_rules.keys()))
+        matching_rules_old_ips = set(matching_rules.keys()).difference(current_ips)
+        new_ips = current_ips.difference(set(matching_rules.keys()))
+
+        modified_rules_ips = set(modified_rules.keys())
+        modified_rules_kept_ips = new_ips.intersection(modified_rules_ips)
+        modified_rules_old_ips = modified_rules_ips.difference(new_ips)
 
         last_checked_num = 1
-        while len(extra_new_ips) > 0:
-            new_ip = extra_new_ips.pop()
-            if len(old_matching_ips) > 0:
-                old_ip = old_matching_ips.pop()
+        while len(new_ips) > 0:
+            new_ip = new_ips.pop()
+            if len(matching_rules_old_ips) > 0:
+                old_ip = matching_rules_old_ips.pop()
                 number = matching_rules[old_ip]["number"]
-            elif len(old_modified_ips) > 0:
-                old_ip = old_modified_ips.pop()
-                number = modified_rules[old_ip]["number"]
+            elif len(modified_rules_ips) > 0:
+                if new_ip in modified_rules_kept_ips:
+                    modified_rules_ips.remove(new_ip)
+                    number = modified_rules[new_ip]["number"]
+                else:
+                    old_ip = modified_rules_old_ips.pop()
+                    modified_rules_ips.remove(old_ip)
+                    number = modified_rules[old_ip]["number"]
             else:
                 while(last_checked_num in nums_used):
                     last_checked_num += 1
@@ -302,7 +310,7 @@ async def updateRules():
             path = table + "|" + rule_name + str(number)
             patches.append(await createPatch(path, "add", template["RULE_TEMPLATE"], new_ip, src_dst))
         
-        for rules, old_ips in [(matching_rules, old_matching_ips), (modified_rules, old_modified_ips)]:
+        for rules, old_ips in [(matching_rules, matching_rules_old_ips), (modified_rules, modified_rules_ips)]:
             while len(old_ips) > 0:
                 old_ip = old_ips.pop()
                 number = rules[old_ip]["number"]
