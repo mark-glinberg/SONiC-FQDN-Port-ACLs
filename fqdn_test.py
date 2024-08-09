@@ -5,6 +5,7 @@ import socket
 import ipaddress
 import json
 import subprocess
+import pathlib
 
 def writeToFile(file, content):
     with open(file, "w") as f:
@@ -14,6 +15,10 @@ def readFromFile(file):
     with open(file, "r") as f:
         output = json.load(f)
     return output
+
+def deleteFile(file):
+    path = pathlib.Path(file)
+    path.unlink()
 
 class TestPatches(unittest.TestCase):
     def setUp(self) -> None:  
@@ -101,7 +106,10 @@ class TestIPs(unittest.TestCase):
                     expected[domain]["ipv6"].add(ip + "/128")
         self.assertEqual(expected, out)
 
-class TestRules(unittest.TestCase):        
+class TestRules(unittest.TestCase):
+    def tearDown(self):
+        deleteFile("rules.json")
+
     def test_Regular_Rule(self):
         regular_rule = {"TABLE|FQDN_RUL_this_is_a_rule": {
                                     "PACKET_ACTION": "FORWARD",
@@ -873,6 +881,9 @@ class TestRules(unittest.TestCase):
         self.assertEqual(json.dumps(rules), json.dumps(expected))
         
 class TestTemplates(unittest.TestCase):
+    def tearDown(self):
+        deleteFile("templates.json")
+
     def test_Domains(self):
         templates = {"TEMPLATE0": {"PRIORITY": "1",
                                    "PACKET_ACTION": "FORWARD",
@@ -1262,6 +1273,11 @@ class TestDeleteRules(unittest.TestCase):
 
 # MAKE SURE TO CHANGE THE get_ip_addresses FUNCTION TO QUERY THE nslookup.json FILE INSTEAD OF socket #
 class TestUpdate(unittest.TestCase):
+    def tearDown(self):
+        deleteFile("nslookup.json")
+        deleteFile("rules.json")
+        deleteFile("templates.json")
+
     def comparePatches(self, expected, actual):
         expected_patches = {}
         expected_patches["ops"] = [0, 0]
